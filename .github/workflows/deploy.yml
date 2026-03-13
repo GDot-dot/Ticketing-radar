@@ -19,6 +19,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 消除 Node 20 警告
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,13 +28,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24 # 升級到 Node 24
           
       - name: Install dependencies
         run: npm install
         
       - name: Build
-        # 這裡會從 GitHub Secrets 中讀取您設定的 API Key
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_ACTIONS: true
