@@ -1,0 +1,5 @@
+{
+  "name": "展演售票雷達",
+  "description": "一鍵搜尋各大售票平台 (KKTIX, 拓元等) 的演唱會與展演門票資訊",
+  "requestFramePermissions": []
+}
