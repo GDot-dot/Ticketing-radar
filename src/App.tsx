@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Ticket, Calendar, ExternalLink, Loader2, AlertCircle, Music, Star, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI } from "@google/genai";
+
+const searchCache = new Map<string, any>();
 
 interface EventResult {
   eventName: string;
@@ -10,7 +13,7 @@ interface EventResult {
   status: string;
 }
 
-function EventCard({ result, index, isStarred, onToggleStar }: { result: EventResult, index: number, isStarred: boolean, onToggleStar: (event: EventResult, e: React.MouseEvent) => void }) {
+function EventCard({ result, index, isStarred, onToggleStar }: { key?: string, result: EventResult, index: number, isStarred: boolean, onToggleStar: (event: EventResult, e: React.MouseEvent) => void }) {
   return (
     <motion.a
       href={result.url}
@@ -109,21 +112,63 @@ export default function App() {
     setError(null);
     setResults([]);
 
+    if (searchCache.has(query)) {
+      setResults(searchCache.get(query));
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch('/api/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query }),
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const prompt = `
+        搜尋「${query}」在台灣的演唱會或展演。
+
+        優先搜尋：
+        - KKTIX
+        - 拓元 tixCraft
+        - ibon售票
+        - FamiTicket
+        - 寬宏售票
+
+        請提供以下資訊，並以 JSON 格式回傳，包含一個陣列：
+        - eventName: 活動名稱
+        - date: 活動日期或期間 (若無確切日期請填寫 "近期" 或 "未定")
+        - platform: 售票平台名稱 (例如 KKTIX, 拓元)
+        - url: 該活動的直接購票連結或相關資訊頁面連結
+        - status: 售票狀態 (例如：熱賣中、已售完、即將開賣、準備中)
+
+        如果找不到任何相關的展演活動，請回傳空陣列 []。
+        請確保連結 (url) 是真實有效的。
+
+        重要：請「只」回傳 JSON 陣列，不要包含任何 Markdown 標記 (如 \`\`\`json)、不要包含任何引文標記 (如 [1])、不要有任何其他說明文字。
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || '搜尋失敗');
+      const text = response.text;
+      if (!text) {
+        throw new Error('No response from Gemini');
       }
 
+      // 移除可能出現的 Markdown 標記與搜尋引文標記
+      let jsonStr = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      jsonStr = jsonStr.replace(/\[\d+\]/g, ''); // 移除 [1], [2] 等引文標記
+
+      let data;
+      try {
+        data = JSON.parse(jsonStr);
+      } catch (parseErr) {
+        console.error("JSON Parse Error. Raw text:", text);
+        throw new Error("無法解析 AI 回傳的資料格式");
+      }
+
+      searchCache.set(query, data);
       setResults(data);
     } catch (err: any) {
       console.error('Search error:', err);
@@ -131,7 +176,7 @@ export default function App() {
       if (err?.message?.includes('429') || err?.message?.includes('quota') || err?.status === 429) {
         setError('API 呼叫次數已達上限 (429 Too Many Requests)。\nGoogle Gemini API 的免費額度可能已用盡，請稍後再試，或檢查您的 Google Cloud 專案配額設定。');
       } else {
-        setError(err.message || '搜尋過程中發生錯誤，請稍後再試。');
+        setError(`搜尋過程中發生錯誤，請稍後再試。詳細錯誤: ${err?.message || '未知錯誤'}`);
       }
     } finally {
       setIsLoading(false);
