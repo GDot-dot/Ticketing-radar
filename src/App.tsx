@@ -162,9 +162,17 @@ export default function App() {
 
       let data;
       try {
+        // 嘗試找出 JSON 陣列的開頭和結尾
+        const jsonMatch = jsonStr.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          jsonStr = jsonMatch[0];
+        }
         data = JSON.parse(jsonStr);
       } catch (parseErr) {
         console.error("JSON Parse Error. Raw text:", text);
+        if (jsonStr.includes('<!DOCTYPE') || jsonStr.includes('<html')) {
+          throw new Error("API 請求失敗，收到不正確的 HTML 回應。請確認 API 金鑰是否正確設定。");
+        }
         throw new Error("無法解析 AI 回傳的資料格式");
       }
 

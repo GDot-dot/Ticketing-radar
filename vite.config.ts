@@ -6,8 +6,6 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    // 當在 GitHub Actions 環境打包時，自動套用您的儲存庫名稱作為路徑
-    base: process.env.GITHUB_ACTIONS ? '/Ticketing-radar/' : '/',
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
