@@ -143,15 +143,33 @@ export default function App() {
         重要：請「只」回傳 JSON 陣列，不要包含任何 Markdown 標記 (如 \`\`\`json)、不要包含任何引文標記 (如 [1])、不要有任何其他說明文字。
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
-      });
+      let response;
+      let retries = 3;
+      let delay = 2000; // 初始等待 2 秒
 
-      const text = response.text;
+      for (let i = 0; i < retries; i++) {
+        try {
+          response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: prompt,
+            config: {
+              tools: [{ googleSearch: {} }]
+            }
+          });
+          break; // 成功就跳出迴圈
+        } catch (err: any) {
+          const isRateLimit = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota');
+          if (isRateLimit && i < retries - 1) {
+            console.warn(`Rate limited (429). Retrying in ${delay / 1000} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2; // 指數退避 (2s, 4s)
+          } else {
+            throw err; // 如果不是 429，或者已經重試完畢，就拋出錯誤
+          }
+        }
+      }
+
+      const text = response?.text;
       if (!text) {
         throw new Error('No response from Gemini');
       }
