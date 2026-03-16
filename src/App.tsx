@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Ticket, Calendar, ExternalLink, Loader2, AlertCircle, Music, Star, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI } from "@google/genai";
 
 const searchCache = new Map<string, any>();
 
@@ -119,79 +118,21 @@ export default function App() {
     }
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-      const prompt = `
-        搜尋「${query}」在台灣的演唱會或展演。
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query })
+      });
 
-        優先搜尋：
-        - KKTIX
-        - 拓元 tixCraft
-        - ibon售票
-        - FamiTicket
-        - 寬宏售票
+      const data = await response.json();
 
-        請提供以下資訊，並以 JSON 格式回傳，包含一個陣列：
-        - eventName: 活動名稱
-        - date: 活動日期或期間 (若無確切日期請填寫 "近期" 或 "未定")
-        - platform: 售票平台名稱 (例如 KKTIX, 拓元)
-        - url: 該活動的直接購票連結或相關資訊頁面連結
-        - status: 售票狀態 (例如：熱賣中、已售完、即將開賣、準備中)
-
-        如果找不到任何相關的展演活動，請回傳空陣列 []。
-        請確保連結 (url) 是真實有效的。
-
-        重要：請「只」回傳 JSON 陣列，不要包含任何 Markdown 標記 (如 \`\`\`json)、不要包含任何引文標記 (如 [1])、不要有任何其他說明文字。
-      `;
-
-      let response;
-      let retries = 3;
-      let delay = 2000; // 初始等待 2 秒
-
-      for (let i = 0; i < retries; i++) {
-        try {
-          response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: prompt,
-            config: {
-              tools: [{ googleSearch: {} }]
-            }
-          });
-          break; // 成功就跳出迴圈
-        } catch (err: any) {
-          const isRateLimit = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota');
-          if (isRateLimit && i < retries - 1) {
-            console.warn(`Rate limited (429). Retrying in ${delay / 1000} seconds...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            delay *= 2; // 指數退避 (2s, 4s)
-          } else {
-            throw err; // 如果不是 429，或者已經重試完畢，就拋出錯誤
-          }
+      if (!response.ok) {
+        if (data.isRateLimit) {
+          throw new Error('429');
         }
-      }
-
-      const text = response?.text;
-      if (!text) {
-        throw new Error('No response from Gemini');
-      }
-
-      // 移除可能出現的 Markdown 標記與搜尋引文標記
-      let jsonStr = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      jsonStr = jsonStr.replace(/\[\d+\]/g, ''); // 移除 [1], [2] 等引文標記
-
-      let data;
-      try {
-        // 嘗試找出 JSON 陣列的開頭和結尾
-        const jsonMatch = jsonStr.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          jsonStr = jsonMatch[0];
-        }
-        data = JSON.parse(jsonStr);
-      } catch (parseErr) {
-        console.error("JSON Parse Error. Raw text:", text);
-        if (jsonStr.includes('<!DOCTYPE') || jsonStr.includes('<html')) {
-          throw new Error("API 請求失敗，收到不正確的 HTML 回應。請確認 API 金鑰是否正確設定。");
-        }
-        throw new Error("無法解析 AI 回傳的資料格式");
+        throw new Error(data.error || 'API 請求失敗');
       }
 
       searchCache.set(query, data);
